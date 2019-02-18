@@ -18,19 +18,40 @@ These are great resources for VAEs:
 - Explanation: [Tutorial on Variational Autoencoders](https://arxiv.org/abs/1606.05908)
 
 ### Theory
-#### What is a Latent space?
-A
+#### What is a latent space?
+This is the representation defined by the bottleneck layer of the network. This representation is called the latent representation, which is used to generate the observable data, X. 
 
+The latent space is just the continuous set of all these latent representations.
+
+#### How does VAEs construct a latent space?
+Here is the problem: Train on a single point won't give good results for the points around that point. If we were to just deterministically backprop the difference (as is what happens with a normal autoencoder), we might not get good results when sampling the parts of the space that aren't training data representations.
+
+To solve this, we should train a region around X for a given point X. Using the information in X to shape a region in space. Using many of these X will allow us to create our space. The region between two training points will be an interpolation between the two points. 
+
+How do we implement this solution? We will have our latent representation be a distribution instead of a deterministic point or a dirac delta. When training, we can update the parameters in this distribution.
+
+How do we choose a distribution? The standard distribution to choose would be the normal distribution (this is what the paper uses). No matter what the image distribution is (for a given X), our encoder neural network should be able to map the distribution to a normal, (this is our prior). See Figure 2 in [Tutorial on Variational Autoencoders](https://arxiv.org/abs/1606.05908). We can represent the bottleneck layer as a distribution by calculating the mean and standard deviation. 
+
+Prevent the distribution from collapsing to a point! Even if we set up our network to be able to represent a probabilistic latent representation, there is nothing preventing the network from setting the standard deviation to zero. Nothing in our objective accounts for the space between training samples. We need to constrain our latent representation distribution. This is where the KL divergence regularization term comes in. We will constrain it be close to our prior. We try to minimize the KL divergence between the prior (which is an isotropic normal) an our calculated distribution.
 
 ### Implementation Tricks
+reparameterization trick:
+- What is it?
+	- We won't be able to backprop through a random variable. This means that we won't be able to update the inference model, as our latent representation will be a random variable.
+	- The reparameterization trick aims to solve this by separating the deterministic part and the random part. We can have mean and standard deviation be deterministic, where we can back propogate through, and have a noise term which get mulitplied to the standard deviation, which will cause this to be random.
 
+- How to code it? We need to constrain our standard deviation to be positive, since our KL loss depends on that. We can either apply a softplus to the stddev, or we can allow it to be negative and say that the network is calculating the natural log of the stddev, which is what this project does. 
 
 ## Analysis:
+### Loss Training
 - cross entropy vs MSE vs KLD annealing
 	- CE seems to counter KLD more so than MSE
+
+### Architecture Tuning
 - tuning the architecture (layer sizes, amounts)
-- Analysis of the latent space:
-	- tuning latent representation size
+- tuning latent representation size
+
+### Analysis of the latent space:
 	- as the representation changes
 	- as the representation increases in size
 	- plot of space with umap/tsne
@@ -38,7 +59,8 @@ A
 	- analysis of effect on latent space per sample
 		- as a measure of distance.
 	- VAE space vs AE space
-- changing datasets
+	- how do the embeddings behave when a new label is introduced (eg. if we have a 1, and 7, what happens if we introduce a 8) How fast does the distributions realign themselves?
+
 
 ## Going Beyond 
 Add in noise as part of the latent representation,
@@ -46,3 +68,4 @@ Add in noise as part of the latent representation,
 
 ## Future Work
 - add tensorboard
+- celeba
