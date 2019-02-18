@@ -1,6 +1,6 @@
-#Variational Auto Encoder
+# Variational Auto Encoder
 ## About this Project
-Here is an implementation of a VAE using tensorflow.
+Here is a simple implementation of a VAE using tensorflow.
 
 The parameters to be tuned can be accessed in params.py. Analysis below used these parameters.
 
@@ -9,7 +9,20 @@ The purpose of this repository is to learn and test an understanding of VAES. Pl
 ## Requirements
 Please pull my utils repo, and add it to your python path. The functions there are used.
 
+The model is contained in main.py, the parameters are in params.py and the predictions folder contains saved images during training.
+
 ## VAE background
+### Resources
+These are great resources for VAEs:
+- Original Paper: [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114)
+- Explanation: [Tutorial on Variational Autoencoders](https://arxiv.org/abs/1606.05908)
+
+### Theory
+#### What is a Latent space?
+A
+
+
+### Implementation Tricks
 
 
 ## Analysis:
