@@ -74,6 +74,7 @@ def main():
 	plot_step = params["plot_step"]
 	loss_type = params["loss_type"]
 	latent_size = params["latent_size"]
+	pm.create_new_path(pm.logdir)
 	#get data
 	images, labels = gu.get_mnist_data(gc.datapath)
 	datashape = list(images.shape)
@@ -84,15 +85,18 @@ def main():
 	outputs_ph = tf.placeholder(tf.float32)
 	inputs_set_ph = tf.placeholder(tf.float32)
 	outputs_set_ph = tf.placeholder(tf.float32)	
+	latents_ph = tf.placeholder(tf.float32, shape=(None, latent_size))
 	iterator, next_element = gu.get_iterator(batch_size, inputs=inputs_set_ph, labels=outputs_set_ph)
 
 	#make model
 	inputs = inputs_ph
-	pred, shape_before_flatten, dist_params = encoder(inputs, latent_size=latent_size)
-	pred = decoder(pred, shape_before_flatten)
+	latents_gen = latents_ph
+	latents_rec, shape_before_flatten, dist_params = encoder(inputs, latent_size=latent_size)
+	pred_rec = decoder(latents_rec, shape_before_flatten)#decoder for reconstruction
+	pred_gen = decoder(latents_gen, shape_before_flatten)#decoder for generation of new samples 
 
 	#get loss
-	Recon_Loss = tf.reduce_mean(reconstruction_loss(inputs, pred, loss_type))
+	Recon_Loss = tf.reduce_mean(reconstruction_loss(inputs, pred_rec, loss_type))
 	Regul_Loss = tf.reduce_mean(kl_isonormal_loss(*dist_params))
 	kl_multiplier = tf.placeholder(tf.float32)
 	loss = Recon_Loss+kl_multiplier*Regul_Loss
@@ -116,7 +120,7 @@ def main():
 			feed_dict = {
 				inputs_ph:data["inputs"], 
 				outputs_ph:data["labels"],
-				kl_multiplier:1
+				kl_multiplier:min(step/1, 1)
 				}
 
 
@@ -129,14 +133,44 @@ def main():
 				break
 			if not step%plot_step or step in log_step:
 				#save image of data:
-				data_val = sess.run(pred, feed_dict=feed_dict)
-				subplot = [2,3]
-				f, axarr = plt.subplots(*subplot)
-				for i in range(np.prod(subplot).item()):
-					axarr[i%subplot[0],i//subplot[0]%subplot[1]].imshow(data_val[i,:,:,0])
+				#create reconstruction
+				feed_dict[latents_ph] = np.random.normal(size=(batch_size, latent_size))
+				recon_val, gener_val = sess.run([pred_rec, pred_gen], feed_dict=feed_dict)
+
+				original_images = create_image_grid(feed_dict[inputs_ph][:48], [1,9])
+				reconstruction = create_image_grid(recon_val[:48],[1,9])
+				generation = create_image_grid(gener_val[:48],[1,9])
+
+				subplot = [3,1]
+				f, axarr = plt.subplots(*subplot, constrained_layout=True)
+				axarr[0].imshow(original_images)
+				axarr[0].set_title("reconstruction original images")
+				axarr[1].imshow(reconstruction)
+				axarr[1].set_title("image reconstruction")
+				axarr[2].imshow(generation)
+				axarr[2].set_title("image generation")
 				plt.savefig(os.path.join(pm.logdir, "image_%s.jpg"%step))
 				plt.close()
+				
+def create_image_grid(images, aspect_ratio=[1,1]):
+	#will create a 2D array of images to be as close to the specified aspect ratio as possible.
+	#assumes that images will be able to cover the specified aspect ration min num images = aspect_ratio[1]*aspect_ratio[2]
+	#only plots grayscale images right now (can be scaled to multi channel)
+	num_images = len(images)
+	
+	#find the bounding box:
+	bounding_box = np.asarray(aspect_ratio)
+	while(1):
+		if np.prod(bounding_box) >= num_images:
+			break
+		bounding_box+=1
 
-
+	final_image = np.zeros((bounding_box[0]*images.shape[1], bounding_box[1]*images.shape[2]))
+	#fill the available bounding box
+	for i in range(num_images):
+		row_num = i%bounding_box[0]*images.shape[1]
+		col_num = i//bounding_box[0]%bounding_box[1]*images.shape[2]
+		final_image[row_num:row_num+images.shape[1], col_num:col_num+images.shape[2]] = images[i,:,:,0]
+	return final_image
 if __name__ == "__main__":
 	main()
