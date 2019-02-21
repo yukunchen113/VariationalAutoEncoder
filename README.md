@@ -47,11 +47,11 @@ reparameterization trick:
 ## Analysis:
 ### Loss Training
 #### Cross Entropy 
-The loss created from cross entropy is small, and gets overshadowed by the KLD loss. The result created is similar MSE loss. Shown below
+The loss created from cross entropy is small, and gets overshadowed by the KLD loss. The result created is similar MSE loss. Shown here:
 
 ![Cross Entropy and KL Loss](images/CE_0.jpg)
 
-Though the pure auto encoder approach is not as good for reconstruction as MSE.
+Though the pure auto encoder approach is not as good for reconstruction as MSE. Here:
 
 ![Cross Entropy](images/CE_1.jpg)
 
