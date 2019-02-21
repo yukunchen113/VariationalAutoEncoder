@@ -28,7 +28,7 @@ def encoder(pred, activation=tf.nn.relu, latent_size=32):
 		#if we use the log, we can be negative
 		latent_log_std = tf.layers.dense(pred, latent_size)
 		noise = tf.random_normal(tf.shape(latent_log_std))
-		latent = tf.exp(latent_log_std)*noise+latent_mean
+		latent = tf.exp(0.5*latent_log_std)*noise+latent_mean
 	return latent, shape_before_flatten, [latent_mean, latent_log_std]
 
 
@@ -81,11 +81,11 @@ def main():
 	datashape[0] = batch_size
 
 	#create placeholders
-	inputs_ph = tf.placeholder(tf.float32, shape=(None, *datashape[1:]))
-	outputs_ph = tf.placeholder(tf.float32)
-	inputs_set_ph = tf.placeholder(tf.float32)
-	outputs_set_ph = tf.placeholder(tf.float32)	
-	latents_ph = tf.placeholder(tf.float32, shape=(None, latent_size))
+	inputs_ph = tf.placeholder(tf.float32, shape=(None, *datashape[1:]), name="inputs_ph")
+	outputs_ph = tf.placeholder(tf.float32, name="outputs_ph")
+	inputs_set_ph = tf.placeholder(tf.float32, name="inputs_set_ph")
+	outputs_set_ph = tf.placeholder(tf.float32, name="outputs_set_ph")
+	latents_ph = tf.placeholder(tf.float32, shape=(None, latent_size), name="latents_ph")
 	iterator, next_element = gu.get_iterator(batch_size, inputs=inputs_set_ph, labels=outputs_set_ph)
 
 	#make model
@@ -98,7 +98,7 @@ def main():
 	#get loss
 	Recon_Loss = tf.reduce_mean(reconstruction_loss(inputs, pred_rec, loss_type))
 	Regul_Loss = tf.reduce_mean(kl_isonormal_loss(*dist_params))
-	kl_multiplier = tf.placeholder(tf.float32)
+	kl_multiplier = tf.placeholder(tf.float32, name="kl_multiplier")
 	loss = Recon_Loss+kl_multiplier*Regul_Loss
 
 	#training:
@@ -115,18 +115,24 @@ def main():
 				inputs_set_ph:images,
 				outputs_set_ph:labels,
 			})
+		kl_mul_val_step = 0
 		for step in range(num_steps):
 			data = sess.run(next_element)
 			feed_dict = {
 				inputs_ph:data["inputs"], 
 				outputs_ph:data["labels"],
-				kl_multiplier:min(step/1, 1)
 				}
 
 
-			loss_val, Regul_Loss_val, Recon_Loss_val = sess.run([loss, Regul_Loss, Recon_Loss], feed_dict=feed_dict)
+			Regul_Loss_val, Recon_Loss_val = sess.run([Regul_Loss, Recon_Loss], feed_dict=feed_dict)
 			
-			sess.run([train_op], feed_dict=feed_dict)
+			if Regul_Loss_val <0.070:
+				kl_mul_val_step = step
+			train_feed = feed_dict.copy()
+			train_feed[kl_multiplier] = 0#min((step - kl_mul_val_step)/50000, 1)
+
+			loss_val,_ = sess.run([loss, train_op], feed_dict=train_feed)
+
 
 			print("step: %d, \ttotal loss: %.3f, \tRegularization loss: %.3f, \tReconstruction loss: %.3f"%(step, loss_val, Regul_Loss_val, Recon_Loss_val))
 			if np.isnan(loss_val):
@@ -141,6 +147,7 @@ def main():
 				reconstruction = create_image_grid(recon_val[:48],[1,9])
 				generation = create_image_grid(gener_val[:48],[1,9])
 
+				plt.clf()
 				subplot = [3,1]
 				f, axarr = plt.subplots(*subplot, constrained_layout=True)
 				axarr[0].imshow(original_images)

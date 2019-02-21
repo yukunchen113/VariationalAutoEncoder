@@ -47,6 +47,11 @@ reparameterization trick:
 ## Analysis:
 ### Loss Training
 #### Cross Entropy 
+The loss created from cross entropy is small, and gets overshadowed by the KLD loss. The result created is similar MSE loss. Shown below
+![Cross Entropy and KL Loss](images/CE_0.jpg)
+
+Though the pure auto encoder approach is not as good for reconstruction as MSE.
+![Cross Entropy](images/CE_1.jpg)
 
 
 #### MSE Reconstruction Loss
@@ -66,6 +71,11 @@ Using weight from 0 to 1 for the KLD loss as training happens seems to help this
 
 The picture above shows samples from the network after the KLD is slowly increased across 20000 steps. There is not much improvement, though we can see some other digits start to form, which means the MSE is starting to work. if we were to increae length of time of increase, we might get better results. Though, it seems that though the network is able to create reconstructions as an autoencoder, (MSE works on its own) the loss is hard to minimize compared to KLD loss.
 
+![Mean Squared Error with KLD Loss incremental increase, across 500000 steps, beginning (4000 steps)](images/MSE_2.jpg)
+
+The beginning of the training for the VAE with minimal KLD loss is shown above. The VAE is learning a deterministic representation for the training data, rather than a distribution over space, which is what we want.
+
+
 #### AD Reconstruction Loss
 ##### Normal training
 Similar to the MSE problem, the reconstruction seems to be even worse, though not really a concatenation of all images, it seems to take a more conservative approach, more of an average. The AD loss aims to decrease the penalty on perfect reconstruction of the image (pixels shifted right by a bit would be classified as incorrect, even though it is valid)
@@ -82,8 +92,8 @@ Though it is interesting to note that some reconstructions are very off from the
 ![Absolute Difference Error with KLD Loss incremental increase, across 20000 steps](images/AD_1.jpg)
 
 
-
-
+#### Tuning the KLD Loss
+We will use an isotropic normal as a prior for the KLD loss. There are two things that we can try, we can get the KL divergence of the 
 
 
 

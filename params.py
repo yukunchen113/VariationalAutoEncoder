@@ -4,6 +4,7 @@ import tensorflow as tf
 import shutil
 #set paths
 logdir = "predictions"
+tblogdir = "tensorboard_logdir"
 def create_new_path(path):
 	if not os.path.exists(path):
 		os.mkdir(path)
@@ -28,6 +29,7 @@ model_params = {
 	"loss_type":[
 		gu.cross_entropy, 
 		tf.losses.mean_squared_error, 
-		tf.losses.absolute_difference][0],#choose one of these losses.
+		tf.losses.absolute_difference,
+		][0],#choose one of these losses.
 
 }
