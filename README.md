@@ -45,7 +45,31 @@ reparameterization trick:
 - How to code it? We need to constrain our standard deviation to be positive, since our KL loss depends on that. We can either apply a softplus to the stddev, or we can allow it to be negative and say that the network is calculating the natural log of the stddev, which is what this project does. 
 
 ## Analysis:
+### AE vs VAE
+To first test out our theory, lets look at the difference between an autoencoder and a Variational Auto Encoder. 
+
+It should be easy to switch between the two of them, if we were to just leave out the KL divergence term, we will only be fitting the training data, with dirac deltas, as we are setting X=f(X) (which defines a single point, X). This means that we can expect very good reconstruction, but very poor generation. VAEs will have equal, or worse reconstruction than this, as they are optimizing for a region in space. So, our VAE loss will be bounded by our AE loss. After a bit of testing, we can see that our AE loss is 0.004 (MSE). 
+
+### Problem with the learned representations.
+
+When converting our network from a AE to a VAE, we start to see a problem. The KLD loss becomes 0! This causes the posterior distribution to be equal to the prior, which will generate the same image every time!
+
+![Mean Squared Error and KL Loss](images/MSE_0.jpg)
+
+The loss for the reconstruction is being overshadowed by the KLD loss (regularization loss). We should then, increase the KLD loss slowly, give the reconstruction loss some time to re-adjust. 
+
+We put a weight parameter on the KLD term, and increase it in a few ways:
+- increase with step, cap at 1.
+- constrain the KLD loss to be above a certain value
+- constrain the reconstruction loss to be below a certain value.
+
+For more experiments on how I went about tuning the loss, see the Loss Training section below.
+
 ### Loss Training
+the architecture that I used for this loss training:
+Encoder: 2x Conv Layers, [64,4,2], 1x fully connected layer [256]
+Latent Space Size:
+
 #### Cross Entropy 
 The loss created from cross entropy is small, and gets overshadowed by the KLD loss. The result created is similar MSE loss. Shown here:
 
@@ -77,6 +101,9 @@ The picture above shows samples from the network after the KLD is slowly increas
 
 The beginning of the training for the VAE with minimal KLD loss is shown above. The VAE is learning a deterministic representation for the training data, rather than a distribution over space, which is what we want.
 
+![Mean Squared Error with KLD Loss incremental increase, KLD loss constrained to have a value above 0.07](images/MSE_3.jpg)
+
+Here, we can see that the model is starting to learn how to generate the images while maintaining reconstruction quality. Though, it seems that for this architecture, this is as far is it will get without posterior collapse.
 
 #### AD Reconstruction Loss
 ##### Normal training
@@ -93,18 +120,32 @@ Though it is interesting to note that some reconstructions are very off from the
 
 ![Absolute Difference Error with KLD Loss incremental increase, across 20000 steps](images/AD_1.jpg)
 
+#### Constraining the KLD Term
+Now that we saw the type of reconstruction term has little to no effect on this posterior collapse, let's try to constrain the KLD term to be above zero. We can use MSE instead of all three, as we saw how similar they behave.
 
-#### Tuning the KLD Loss
-We will use an isotropic normal as a prior for the KLD loss. There are two things that we can try, we can get the KL divergence of the 
+We can try to constrain the KLD loss term to be above a certain value, increasing the KLD weight until this loss is reached. Then, we reset the weight back to 0. This will help keep the KLD loss from directly becoming zero, and will therefore, prevent collapse.
+
+However there are a few problems with this approach
+- cause (KLD Loss) is correlated but not completely mutually exclusive to reconstruction quality 
+	- can have decent reconstruction even with high beta
+- we are limiting the generation quality.
+- constant changing of the KLD bound
+	- we will need to constantly increase the parameter as training goes on, as the MSE adjusts.
+- not optimizing towards our goal directly 
+	- our goal is to make good reconstructions. (to combat posterior collapse). Minimizing the KLD loss means that we are not focusing directly on reconstruction quality. 
+
+#### Constraining the Reconstruction Term
+We can also constrain the reconstruction error to be below a certain value. This value has to be adaptive, or we will level off at a value. We can set it such that, if the MSE loss has been above a certain value for a certain amount of steps, we will increase the bound by a certain amount, otherwise if the MSE loss is below the bound, we will increase the KLD weight slowly. These hyper parameters can be tuned through experiments with running the model.
+
+Here are the best results with constraining the reconstruction term. After this, the KLD will collapse to 0, as the MSE bound will be too high. Before this, the generated images are incomprehensible - no distinguishable numbers. To get better results, we can put a ceiling on the reconstruction bound loss. Though this would mean that the KLD weight will take a very long time to get to 1, which is the normal VAE, if at all. Since this is the case, I will stop here, and search for better methods.
 
 
-
-
-
+![Reconstruction constraint with: initial multiplier value (kl_mul_val_step) as 0, initial reconstruction bound (recon_bound) as 0.01, KLD increase speed as 1/75000 per step, KLD decrease speed as 1/10000000000 per step, decrease tolerence before bound increase is 500 steps, and the reconstruction bound increase as 0.00005. This qualites of this step are: step number 300000, total loss of 0.081, Regularization loss of 0.209, Reconstruction loss of 0.052, kl weight of 0.136598, Reconstruction Bound of 0.043450. Used MSE.](images/ReconstructionConstraint.jpg)
 
 ### Architecture Tuning
-- tuning the architecture (layer sizes, amounts)
-- tuning latent representation size
+- test from minimum capacity model to highest.
+
+
 
 ### Analysis of the latent space:
 - as the representation changes

@@ -74,6 +74,9 @@ def main():
 	plot_step = params["plot_step"]
 	loss_type = params["loss_type"]
 	latent_size = params["latent_size"]
+	log_file = "log.txt" 
+	if os.path.exists(log_file):
+		os.remove(log_file)
 	pm.create_new_path(pm.logdir)
 	#get data
 	images, labels = gu.get_mnist_data(gc.datapath)
@@ -115,7 +118,10 @@ def main():
 				inputs_set_ph:images,
 				outputs_set_ph:labels,
 			})
-		kl_mul_val_step = 0
+		kl_mul_val_step = 0#initial multiplier value
+		recon_bound = 0.01
+		recon_static= 0#number of steps where the KLD weight is not increasing
+		activate = False#this will start the KLD weight, only when the reconstruction has first reached oast the bound.
 		for step in range(num_steps):
 			data = sess.run(next_element)
 			feed_dict = {
@@ -126,18 +132,35 @@ def main():
 
 			Regul_Loss_val, Recon_Loss_val = sess.run([Regul_Loss, Recon_Loss], feed_dict=feed_dict)
 			
-			if Regul_Loss_val <0.070:
-				kl_mul_val_step = step
 			train_feed = feed_dict.copy()
-			train_feed[kl_multiplier] = 0#min((step - kl_mul_val_step)/50000, 1)
+			if Recon_Loss_val < recon_bound:
+				activate = True
+				kl_mul_val_step+=1/75000
+				recon_static = 0
+			else:
+				if activate:
+					kl_mul_val_step-=1/10000000000
+					recon_static+=1
+			if activate:
+				if recon_static > 500:
+					recon_bound+=0.00005
+			
+			kl_mul_val_step = min(1, max(0, kl_mul_val_step))
+			
+			train_feed[kl_multiplier] = kl_mul_val_step#min((step - kl_mul_val_step)/30000, 1)
+				
 
 			loss_val,_ = sess.run([loss, train_op], feed_dict=train_feed)
 
+			print_out = "step: %d, \ttotal loss: %.3f, \tRegularization loss: %.3f, \tReconstruction loss: %.3f, kl weight: %f, \tReconstruction Bound: %f"%(step, loss_val, Regul_Loss_val, Recon_Loss_val, train_feed[kl_multiplier], recon_bound)
+			print(print_out)
 
-			print("step: %d, \ttotal loss: %.3f, \tRegularization loss: %.3f, \tReconstruction loss: %.3f"%(step, loss_val, Regul_Loss_val, Recon_Loss_val))
 			if np.isnan(loss_val):
 				break
+			
 			if not step%plot_step or step in log_step:
+				with open(log_file, "a") as f:
+					f.write("%s\n"%print_out)
 				#save image of data:
 				#create reconstruction
 				feed_dict[latents_ph] = np.random.normal(size=(batch_size, latent_size))
@@ -146,7 +169,13 @@ def main():
 				original_images = create_image_grid(feed_dict[inputs_ph][:48], [1,9])
 				reconstruction = create_image_grid(recon_val[:48],[1,9])
 				generation = create_image_grid(gener_val[:48],[1,9])
+				
+				np.savez(os.path.join(pm.logdir, "image_%s.npz"%step),
+				 **{"original_images":original_images, 
+				 "reconstruction":reconstruction, 
+				 "generation":generation})
 
+				
 				plt.clf()
 				subplot = [3,1]
 				f, axarr = plt.subplots(*subplot, constrained_layout=True)
@@ -158,6 +187,7 @@ def main():
 				axarr[2].set_title("image generation")
 				plt.savefig(os.path.join(pm.logdir, "image_%s.jpg"%step))
 				plt.close()
+				
 				
 def create_image_grid(images, aspect_ratio=[1,1]):
 	#will create a 2D array of images to be as close to the specified aspect ratio as possible.

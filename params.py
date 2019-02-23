@@ -30,6 +30,6 @@ model_params = {
 		gu.cross_entropy, 
 		tf.losses.mean_squared_error, 
 		tf.losses.absolute_difference,
-		][0],#choose one of these losses.
+		][1],#choose one of these losses.
 
 }
