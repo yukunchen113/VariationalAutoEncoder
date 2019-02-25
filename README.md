@@ -65,10 +65,28 @@ We put a weight parameter on the KLD term, and increase it in a few ways:
 
 For more experiments on how I went about tuning the loss, see the Loss Training section below.
 
+This problem called posterior collapse. The model makes predictions independent of the latent representation, and will therefore try to solely minimize the regularization term instead. This causes the posterior to become equal to our prior, all our training representations collapse down to the same distribution.
+
+To solve this [Bowman et al.](https://arxiv.org/pdf/1511.06349.pdf) mention in section 3.1 that they increase the KLD loss slowly from 0 to 1, called KLD annealing.
+
+Section 2.2 of [Chen et al.](https://arxiv.org/pdf/1611.02731.pdf) mention that posterior collapse is caused by an expressive decoder, where the decoder could sufficiently model x without z. They look at this using a [bits-back](https://www.cs.helsinki.fi/u/ahonkela/papers/infview.pdf) approach.
+
+As this project is only for making a standard VAE, I won't try implementing different architecture/data modifications. I'll do that in a future project.
+
+After playing around with the latent space, I found that having a very low dimensional latent space (2 units) with no regularization loss will make good generations and reconstructions. The low latent space acts as a form of regularizer, causing the training samples to be close together, which will allow for good generated samples. The distributions are not collapsing down to 0, and are within the values of 0 and 0.002. The means are generally staying withing a range of -6 to 6 when being trained. There are more than enough training sample to fill this space. Howerer, there are down sides to this as well, when trained for a while, the stddev will collapse to 0, and we will find it hard to scale this up, and apply disentanglement.
+
+[Low Dimensional Latent Space Autoencoder](images/LLAE.jpg)
+
+
 ### Loss Training
 the architecture that I used for this loss training:
-Encoder: 2x Conv Layers, [64,4,2], 1x fully connected layer [256]
-Latent Space Size:
+- Encoder: 2x Conv Layers, [64,4,2], 1x fully connected layer [256]
+- Latent Space Size: 32
+- Decoder: 1x Conv Layer [64,4,2], 1x Conv Layer [1,4,2], 1x fully connected layer [256]
+
+Additionally I used a batch size of 64
+
+The technique of slowly increasing the weight on the KLD loss form 0 to 1 to combat posterior collapse is called KLD annealing. Mentioned in section 3.1 of [Bowman et al.](https://arxiv.org/pdf/1511.06349.pdf), though the exact method details isn't quite clear (eg. linear increase? Logarithmic increase?).
 
 #### Cross Entropy 
 The loss created from cross entropy is small, and gets overshadowed by the KLD loss. The result created is similar MSE loss. Shown here:
@@ -141,27 +159,3 @@ Here are the best results with constraining the reconstruction term. After this,
 
 
 ![Reconstruction constraint with: initial multiplier value (kl_mul_val_step) as 0, initial reconstruction bound (recon_bound) as 0.01, KLD increase speed as 1/75000 per step, KLD decrease speed as 1/10000000000 per step, decrease tolerence before bound increase is 500 steps, and the reconstruction bound increase as 0.00005. This qualites of this step are: step number 300000, total loss of 0.081, Regularization loss of 0.209, Reconstruction loss of 0.052, kl weight of 0.136598, Reconstruction Bound of 0.043450. Used MSE.](images/ReconstructionConstraint.jpg)
-
-### Architecture Tuning
-- test from minimum capacity model to highest.
-
-
-
-### Analysis of the latent space:
-- as the representation changes
-- as the representation increases in size
-- plot of space with umap/tsne
-- Transformation between two reconstructions
-- analysis of effect on latent space per sample
-	- as a measure of distance.
-- VAE space vs AE space
-- how do the embeddings behave when a new label is introduced (eg. if we have a 1, and 7, what happens if we introduce a 8) How fast does the distributions realign themselves?
-
-
-## Going Beyond 
-Add in noise as part of the latent representation,
-- Use a very small latent representation which is trained, rest is noise.
-
-## Future Work
-- add tensorboard
-- celeba

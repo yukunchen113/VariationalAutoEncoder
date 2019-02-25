@@ -15,7 +15,7 @@ def create_new_path(path):
 model_params = {
 	#model params
 	"batch_size":64,#the size for batch training
-	"latent_size":32,
+	"latent_size":2,
 
 	#for plotting/logging
 	"plot_step":1000,#will save the plot every this many steps.

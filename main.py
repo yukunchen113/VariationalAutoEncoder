@@ -14,8 +14,7 @@ import params as pm
 def encoder(pred, activation=tf.nn.relu, latent_size=32):
 	with tf.variable_scope("encoder"):
 		#we will run this architecture later on, mnist is too small to run these
-		#pred = tf.layers.conv2d(pred, 32, 4, 2, "same", activation=activation)
-		#pred = tf.layers.conv2d(pred, 32, 4, 2, "same", activation=activation)
+		
 		pred = tf.layers.conv2d(pred, 64, 4, 2, "same", activation=activation)
 		pred = tf.layers.conv2d(pred, 64, 4, 2, "same", activation=activation)
 		shape_before_flatten = tf.shape(pred)
@@ -26,10 +25,10 @@ def encoder(pred, activation=tf.nn.relu, latent_size=32):
 		latent_mean = tf.layers.dense(pred, latent_size)
 
 		#if we use the log, we can be negative
-		latent_log_std = tf.layers.dense(pred, latent_size)
-		noise = tf.random_normal(tf.shape(latent_log_std))
-		latent = tf.exp(0.5*latent_log_std)*noise+latent_mean
-	return latent, shape_before_flatten, [latent_mean, latent_log_std]
+		latent_log_var = tf.layers.dense(pred, latent_size)
+		noise = tf.random_normal(tf.shape(latent_log_var))
+		latent = tf.exp(0.5*latent_log_var)*noise+latent_mean
+	return latent, shape_before_flatten, [latent_mean, latent_log_var]
 
 
 #create the decoder:
@@ -42,8 +41,6 @@ def decoder(latent_rep, shape_before_flatten, activation=tf.nn.relu):
 		pred = tf.layers.conv2d_transpose(pred, 64, 4, 2, "same", activation=activation)
 		
 		#we will run this architecture later on, mnist is too small to run these
-		#pred = tf.layers.conv2d(pred, 64, 4, 2, "same", activation=activation)
-		#pred = tf.layers.conv2d(pred, 32, 4, 2, "same", activation=activation)
 		pred = tf.layers.conv2d_transpose(pred, 1, 4, 2, "same", activation=activation)
 
 		#compress values to be between 0 and 1
@@ -51,12 +48,12 @@ def decoder(latent_rep, shape_before_flatten, activation=tf.nn.relu):
 		
 	return pred
 
-def kl_isonormal_loss(mu, sig):
+def kl_isonormal_loss(mu, var):
 	#finds the KL divergence between an entered function and an isotropic normal
-	loss = tf.reduce_sum(tf.exp(sig),axis=1)
+	loss = tf.reduce_sum(tf.exp(var),axis=1)
 	loss = loss+tf.reduce_sum(tf.square(mu))
 	loss = loss-tf.cast(tf.shape(mu)[-1], tf.float32)
-	loss = loss-tf.reduce_sum(sig,axis=1)
+	loss = loss-tf.reduce_sum(var,axis=1)
 	loss = 0.5*(loss/tf.cast(tf.shape(mu)[-1], tf.float32))
 
 	return loss
@@ -110,6 +107,12 @@ def main():
 	with tf.control_dependencies([minim]):
 		train_op = tf.no_op()
 
+
+	#latent space analysis:
+	std_analysis = [tf.reduce_mean(tf.exp(0.5*dist_params[1])), tf.reduce_min(tf.exp(0.5*dist_params[1])), tf.reduce_max(tf.exp(0.5*dist_params[1]))]
+	mean_analysis = [tf.reduce_mean(dist_params[0]), tf.reduce_min(dist_params[0]), tf.reduce_max(dist_params[0])]
+
+
 	#run model
 	with tf.Session() as sess:
 		#print(training_data["data"].shape)
@@ -119,7 +122,7 @@ def main():
 				outputs_set_ph:labels,
 			})
 		kl_mul_val_step = 0#initial multiplier value
-		recon_bound = 0.01
+		recon_bound = 0.022
 		recon_static= 0#number of steps where the KLD weight is not increasing
 		activate = False#this will start the KLD weight, only when the reconstruction has first reached oast the bound.
 		for step in range(num_steps):
@@ -142,19 +145,22 @@ def main():
 					kl_mul_val_step-=1/10000000000
 					recon_static+=1
 			if activate:
-				if recon_static > 500:
+				if recon_static > 1000:
 					recon_bound+=0.00005
+					recon_bound = min(recon_bound, 0.038)
 			
-			kl_mul_val_step = min(1, max(0, kl_mul_val_step))
+			kl_mul_val_step = step/500000#min(1, max(0, kl_mul_val_step))
 			
 			train_feed[kl_multiplier] = kl_mul_val_step#min((step - kl_mul_val_step)/30000, 1)
 				
 
 			loss_val,_ = sess.run([loss, train_op], feed_dict=train_feed)
 
-			print_out = "step: %d, \ttotal loss: %.3f, \tRegularization loss: %.3f, \tReconstruction loss: %.3f, kl weight: %f, \tReconstruction Bound: %f"%(step, loss_val, Regul_Loss_val, Recon_Loss_val, train_feed[kl_multiplier], recon_bound)
+			print_out = "step: %d, \ttotal loss: %.3f, \tRegularization loss: %.3f, \tReconstruction loss: %.3f, kl weight: %f, \tReconstruction Bound: %f\
+			\n Latent Space Analysis: \naverage stddev %s,\t stddev range [%s,     \t%s], \
+			\naverage mean %s,   \tmean range [%s,    \t%s]"%(step, loss_val, Regul_Loss_val, Recon_Loss_val, train_feed[kl_multiplier], recon_bound, *sess.run([*std_analysis, *mean_analysis], feed_dict=feed_dict))
 			print(print_out)
-
+			print(""%sess.run([], feed_dict=feed_dict))
 			if np.isnan(loss_val):
 				break
 			
