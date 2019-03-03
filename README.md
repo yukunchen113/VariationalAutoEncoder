@@ -48,7 +48,8 @@ reparameterization trick:
 ### AE vs VAE
 To first test out our theory, lets look at the difference between an autoencoder and a Variational Auto Encoder. 
 
-It should be easy to switch between the two of them, if we were to just leave out the KL divergence term, we will only be fitting the training data, with dirac deltas, as we are setting X=f(X) (which defines a single point, X). This means that we can expect very good reconstruction, but very poor generation. VAEs will have equal, or worse reconstruction than this, as they are optimizing for a region in space. So, our VAE loss will be bounded by our AE loss. After a bit of testing, we can see that our AE loss is 0.004 (MSE). 
+It should be easy to switch between the two of them, if we were to just leave out the KL divergence term, we will only be fitting the training data, with dirac deltas, as we are setting X=f(X) (which defines a single point, X). This means that we can expect very good reconstruction, but very poor generation. VAEs will have equal, or worse reconstruction than this, as they are optimizing for a region in space. So, our VAE loss will be bounded by our AE loss. After a bit of testing, we can see that our AE loss is 0.004 (MSE).
+
 
 ### Problem with the learned representations.
 
@@ -58,12 +59,8 @@ When converting our network from a AE to a VAE, we start to see a problem. The K
 
 The loss for the reconstruction is being overshadowed by the KLD loss (regularization loss). We should then, increase the KLD loss slowly, give the reconstruction loss some time to re-adjust. 
 
-We put a weight parameter on the KLD term, and increase it in a few ways:
-- increase with step, cap at 1.
-- constrain the KLD loss to be above a certain value
-- constrain the reconstruction loss to be below a certain value.
-
-For more experiments on how I went about tuning the loss, see the Loss Training section below.
+We put a weight parameter on the KLD term:
+- wait until model reached sufficent reconstruction quality, then increase the weight by a fraction at each step, cap at 1.
 
 This problem called posterior collapse. The model makes predictions independent of the latent representation, and will therefore try to solely minimize the regularization term instead. This causes the posterior to become equal to our prior, all our training representations collapse down to the same distribution.
 
@@ -71,14 +68,9 @@ To solve this [Bowman et al.](https://arxiv.org/pdf/1511.06349.pdf) mention in s
 
 Section 2.2 of [Chen et al.](https://arxiv.org/pdf/1611.02731.pdf) mention that posterior collapse is caused by an expressive decoder, where the decoder could sufficiently model x without z. They look at this using a [bits-back](https://www.cs.helsinki.fi/u/ahonkela/papers/infview.pdf) approach.
 
-As this project is only for making a standard VAE, I won't try implementing different architecture/data modifications. I'll do that in a future project.
-
-After playing around with the latent space, I found that having a very low dimensional latent space (2 units) with no regularization loss will make good generations and reconstructions. The low latent space acts as a form of regularizer, causing the training samples to be close together, which will allow for good generated samples. The distributions are not collapsing down to 0, and are within the values of 0 and 0.002. The means are generally staying withing a range of -6 to 6 when being trained. There are more than enough training sample to fill this space. Howerer, there are down sides to this as well, when trained for a while, the stddev will collapse to 0, and we will find it hard to scale this up, and apply disentanglement.
-
-[Low Dimensional Latent Space Autoencoder](images/LLAE.jpg)
 
 
-### Loss Training
+### Model Architecture
 the architecture that I used for this loss training:
 - Encoder: 2x Conv Layers, [64,4,2], 1x fully connected layer [256]
 - Latent Space Size: 32
@@ -86,76 +78,39 @@ the architecture that I used for this loss training:
 
 Additionally I used a batch size of 64
 
-The technique of slowly increasing the weight on the KLD loss form 0 to 1 to combat posterior collapse is called KLD annealing. Mentioned in section 3.1 of [Bowman et al.](https://arxiv.org/pdf/1511.06349.pdf), though the exact method details isn't quite clear (eg. linear increase? Logarithmic increase?).
+### Autoencoder Analysis
 
-#### Cross Entropy 
-The loss created from cross entropy is small, and gets overshadowed by the KLD loss. The result created is similar MSE loss. Shown here:
+Let's first analyze a VAE with the KLD weight set to 0, just as an initial test to see if our model can run on the data. We need to see if the model has the capacity to learn the data.
 
-![Cross Entropy and KL Loss](images/CE_0.jpg)
+![Autoencoder Training Samples. Smaller pixel values were increased, to make them more prominent.](images/AE_0.gif)
+![Autoencoder Training Values, The upper and lower bounds are the highest and lowest values in the test batch for their repective labels (ie. mean and stddev).](images/AE_0_analysis.jpg)
 
-Though the pure auto encoder approach is not as good for reconstruction as MSE. Here:
+Here, we see that the theory above is correct. We see from how the images evolve, that the model is capable of learning the images. Notice how the standard deviation of the latent variables are being minimized to 0. 
 
-![Cross Entropy](images/CE_1.jpg)
+Since our model is not constrained, the goal of the model is to directly minimize the loss from the training samples, and thus has poor generation abilities. Mathematically, this is shown from the mean and standard deviation of the latent variables, which can be see as interpolations, or a bridge between the control points of the training samples. The model tries to minimize the effect each item has on one another, causing the increase in mean and the decrease in standard deviation. 
 
+### KLD Annealing
 
-#### MSE Reconstruction Loss
-##### Normal Training
-On it's own Mean Squared Error causes the Regularization loss to be come zero first, which overshadows the reconstruction loss. This causes the same image to be generated all the time, which looks like a accumlulation of all the numbers, since all of the numbers are constrained tightly to fit the normal distribution. 
+Now, lets try KLD annealing mentioned before. We can slowly increase the regularization term weight, while letting the reconstruction catch up. The rate of increase will be done empirically (through experiments). We can start increasing the weight after a while of letting the reconstruction term learn in an AE manner first (weight=0), to get a foothold.
 
-For the KLD to be zero means that all reconstructions have the same embedding as a normal distribution, this means that the reconstruction will be a combination of all images.
+![Autoencoder Training Samples with KLD Annealing. Smaller pixel values were increased, to make them more prominent.](images/AE_1.gif)
 
-The error contribution of MSE seems to be too low compared to the KLD error, which seems to be much easier to minimize, and overshadows the MSE Loss.
+![Autoencoder Training Values with KLD Annealing, The upper and lower bounds are the highest and lowest values in the test batch for their repective labels (ie. mean and stddev).](images/AE_1_analysis.jpg)
 
-![Mean Squared Error and KL Loss](images/MSE_0.jpg)
+Here we can see that the generation results are better, and the reconstruction results seem to be less grainy as well, which might be an effect of using information from other, similar training points. This might be an effect of compression, where good representations are being forced to be learned to minimize the space due to the constraint (regularization term). However, over training, it seems like the numbers are noiser, this is probably due to the effect of the increase in the standard deviation term, causing more noise to be added (it is not being minimized to 0 now.). We can see how much more constrained the distributions of the latent variables are now. The ranges for the mean is smaller, where as the standard deviations are larger now. 
 
-##### Slow KLD increase
-Using weight from 0 to 1 for the KLD loss as training happens seems to help this issue. Though it remains to be seen how generation of new images is affected. (how the overall space is affected).
+### Decreasing Model Capacity
 
-![Mean Squared Error with KLD Loss incremental increase, across 20000 steps](images/MSE_1.jpg)
+Another reason on why posterior collapse would happen is due to the decoder having high capacity. We can test this out by simply decreasing the capacity of the VAE. 
 
-The picture above shows samples from the network after the KLD is slowly increased across 20000 steps. There is not much improvement, though we can see some other digits start to form, which means the MSE is starting to work. if we were to increae length of time of increase, we might get better results. Though, it seems that though the network is able to create reconstructions as an autoencoder, (MSE works on its own) the loss is hard to minimize compared to KLD loss.
+Convolutional neural networks have the assumption of invariance to position built into the achitecture through the sliding window (kernel). This means that it won't have to learn this quality of the data. Normal neural networks perform worse, since they need sufficient data and model capacity to be able to learn this feature. Therefore, we should be able to decrease model capacity by introducing a normal feed forward neural network as the encoder and decoder.
 
-![Mean Squared Error with KLD Loss incremental increase, across 500000 steps, beginning (4000 steps)](images/MSE_2.jpg)
+The architecture I used was:
+- a two 500 unit hidden layer feed forward neural net for the encoder with relu activations.
+- a one 500 unit hidden layer feed forward neural net for the decoder with relu activation.
 
-The beginning of the training for the VAE with minimal KLD loss is shown above. The VAE is learning a deterministic representation for the training data, rather than a distribution over space, which is what we want.
+![Variational Autoencoder Training Samples with low capacity. Smaller pixel values were increased, to make them more prominent.](images/VAE_0.gif)
 
-![Mean Squared Error with KLD Loss incremental increase, KLD loss constrained to have a value above 0.07](images/MSE_3.jpg)
+![Variarional Autoencoder Training Values with low capacity, The upper and lower bounds are the highest and lowest values in the test batch for their repective labels (ie. mean and stddev).](images/VAE_0_analysis.jpg)
 
-Here, we can see that the model is starting to learn how to generate the images while maintaining reconstruction quality. Though, it seems that for this architecture, this is as far is it will get without posterior collapse.
-
-#### AD Reconstruction Loss
-##### Normal training
-Similar to the MSE problem, the reconstruction seems to be even worse, though not really a concatenation of all images, it seems to take a more conservative approach, more of an average. The AD loss aims to decrease the penalty on perfect reconstruction of the image (pixels shifted right by a bit would be classified as incorrect, even though it is valid)
-
-In this case, the KLD is becoming zero fast.
-
-![Absolute Difference Error and KL Loss](images/AD_0.jpg)
-
-##### Slow KLD increase
-The reconstruction and generation seem to be taking on a better form. The individual features of different numbers are starting to show up, but they all seem to have a common structure to the general digit representation. It seems that the KLD term is still too large. However, it seems that if we increase over a longer time period (I tested it across 20000 steps) we might get a better reconstructions. This will also be faster than MSE.
-
-Though it is interesting to note that some reconstructions are very off from the original, and the ones that are off seem to default to the same number, a dim nine like digit. This digit is also the one that from the Normal training. Could this be a bias from the writer of the data? (Drawing thin, numbers.) The zeros are pretty consistent. It seems that the numbers that are in close proximity to the nine digit, collape/default to that representation.
-
-![Absolute Difference Error with KLD Loss incremental increase, across 20000 steps](images/AD_1.jpg)
-
-#### Constraining the KLD Term
-Now that we saw the type of reconstruction term has little to no effect on this posterior collapse, let's try to constrain the KLD term to be above zero. We can use MSE instead of all three, as we saw how similar they behave.
-
-We can try to constrain the KLD loss term to be above a certain value, increasing the KLD weight until this loss is reached. Then, we reset the weight back to 0. This will help keep the KLD loss from directly becoming zero, and will therefore, prevent collapse.
-
-However there are a few problems with this approach
-- cause (KLD Loss) is correlated but not completely mutually exclusive to reconstruction quality 
-	- can have decent reconstruction even with high beta
-- we are limiting the generation quality.
-- constant changing of the KLD bound
-	- we will need to constantly increase the parameter as training goes on, as the MSE adjusts.
-- not optimizing towards our goal directly 
-	- our goal is to make good reconstructions. (to combat posterior collapse). Minimizing the KLD loss means that we are not focusing directly on reconstruction quality. 
-
-#### Constraining the Reconstruction Term
-We can also constrain the reconstruction error to be below a certain value. This value has to be adaptive, or we will level off at a value. We can set it such that, if the MSE loss has been above a certain value for a certain amount of steps, we will increase the bound by a certain amount, otherwise if the MSE loss is below the bound, we will increase the KLD weight slowly. These hyper parameters can be tuned through experiments with running the model.
-
-Here are the best results with constraining the reconstruction term. After this, the KLD will collapse to 0, as the MSE bound will be too high. Before this, the generated images are incomprehensible - no distinguishable numbers. To get better results, we can put a ceiling on the reconstruction bound loss. Though this would mean that the KLD weight will take a very long time to get to 1, which is the normal VAE, if at all. Since this is the case, I will stop here, and search for better methods.
-
-
-![Reconstruction constraint with: initial multiplier value (kl_mul_val_step) as 0, initial reconstruction bound (recon_bound) as 0.01, KLD increase speed as 1/75000 per step, KLD decrease speed as 1/10000000000 per step, decrease tolerence before bound increase is 500 steps, and the reconstruction bound increase as 0.00005. This qualites of this step are: step number 300000, total loss of 0.081, Regularization loss of 0.209, Reconstruction loss of 0.052, kl weight of 0.136598, Reconstruction Bound of 0.043450. Used MSE.](images/ReconstructionConstraint.jpg)
+This method seems more stable. We see that in the beginning the images start to all look similar and the KLD loss is approaching 0, representative of mode collapse. However, after a bit of training, the model is able to regain good representations. This seems much more stable than a high capacity network.
